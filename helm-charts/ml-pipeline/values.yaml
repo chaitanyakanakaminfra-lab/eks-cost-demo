@@ -1,0 +1,21 @@
+# Simulates abandoned ML job still running
+# High resource requests, near-zero actual traffic
+# Cost tool expected result: IDLE — delete candidate
+replicaCount: 2
+
+image:
+  repository: nginx
+  tag: alpine
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: "1000m"
+    memory: "2Gi"
+  limits:
+    cpu: "2000m"
+    memory: "4Gi"
+
+service:
+  type: ClusterIP
+  port: 80

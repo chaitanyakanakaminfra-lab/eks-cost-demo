@@ -1,0 +1,67 @@
+# Atlantis Helm values
+# bootstrap.sh replaces ATLANTIS_ROLE_ARN with real value after terraform apply
+
+orgAllowlist: "github.com/chaitanyakanakaminfra-lab/*"
+
+github:
+  user: chaitanyakanakaminfra-lab
+  tokenSecret:
+    secretName: atlantis-github-secrets
+    secretKey: github-token
+  secretSecret:
+    secretName: atlantis-github-secrets
+    secretKey: webhook-secret
+
+repoConfig: |
+  repos:
+  - id: github.com/chaitanyakanakaminfra-lab/eks-cost-demo
+    allowed_overrides: [workflow]
+    allow_custom_workflows: true
+
+  workflows:
+    cost-aware:
+      plan:
+        steps:
+          - plan
+      apply:
+        steps:
+          - apply
+          - run: |
+              echo "Running EKS Cost Attribution Engine..."
+              cd $BASE_REPO_DIR
+              pip install -q -r eks-cost-attribution/requirements.txt
+              python eks-cost-attribution/main.py \
+                --cluster eks-cost-demo \
+                --region   us-east-1 \
+                --format   markdown \
+                --atlantis
+              echo "Cost attribution complete."
+
+service:
+  type: LoadBalancer
+
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: "ATLANTIS_ROLE_ARN"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+storage:
+  enabled: true
+  size: 5Gi
+
+environment:
+  - name: AWS_REGION
+    value: "us-east-1"
+  - name: AWS_DEFAULT_REGION
+    value: "us-east-1"
+
+hidePrevPlanComments: true
+disableApplyAll: false

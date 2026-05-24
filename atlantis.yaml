@@ -1,0 +1,16 @@
+version: 3
+
+projects:
+  - name: eks-infra
+    dir: terraform
+    workspace: default
+    workflow: cost-aware
+    autoplan:
+      when_modified:
+        - "terraform/**/*.tf"
+        - "terraform/**/*.tfvars"
+        - "helm-charts/**/*.yaml"
+      enabled: true
+    apply_requirements:
+      - mergeable
+      - approved

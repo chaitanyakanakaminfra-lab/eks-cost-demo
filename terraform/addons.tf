@@ -2,7 +2,7 @@
 resource "aws_eks_addon" "cloudwatch_observability" {
   cluster_name = module.eks.cluster_name
   addon_name   = "amazon-cloudwatch-observability"
-  most_recent  = true
+  resolve_conflicts_on_create = "OVERWRITE"
 
   depends_on = [module.eks]
 }

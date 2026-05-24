@@ -12,41 +12,37 @@ spec:
     chart: kube-prometheus-stack
     targetRevision: 85.3.3
     helm:
-      values: |
+     values: |
         grafana:
           adminPassword: "demo-grafana-2024"
           service:
-            type: LoadBalancer
+            type: ClusterIP
           persistence:
-            enabled: true
-            size: 2Gi
+            enabled: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 100Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
         prometheus:
           prometheusSpec:
-            retention: 48h
+            retention: 24h
             resources:
               requests:
-                cpu: 200m
-                memory: 512Mi
+                cpu: 100m
+                memory: 256Mi
               limits:
                 cpu: 500m
-                memory: 1Gi
+                memory: 512Mi
         alertmanager:
           alertmanagerSpec:
             resources:
               requests:
-                cpu: 50m
-                memory: 128Mi
+                cpu: 25m
+                memory: 64Mi
         nodeExporter:
           enabled: true
         kubeStateMetrics:
           enabled: true
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: monitoring
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true

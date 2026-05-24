@@ -27,7 +27,7 @@ LOCK_TABLE="${CLUSTER_NAME}-tflock"
 echo -e "\n${BOLD}EKS Cost Demo — Full Stack Bootstrap${RESET}"
 echo "  Cluster:  $CLUSTER_NAME  |  Region: $AWS_REGION"
 echo "  GitHub:   $GITHUB_USER/$GITHUB_REPO"
-echo "  Estimate: ~$5-7 total for 48h"
+echo "  Estimate: ~\$5-7 total for 48h"
 echo ""
 
 # ── Step 1: S3 + DynamoDB ─────────────────────────────────────────────────────

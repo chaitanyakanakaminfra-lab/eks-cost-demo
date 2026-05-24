@@ -1,0 +1,20 @@
+# Simulates a well-tuned production service
+# Cost tool expected result: ~35% waste (acceptable)
+replicaCount: 3
+
+image:
+  repository: nginx
+  tag: alpine
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: "300m"
+    memory: "256Mi"
+  limits:
+    cpu: "600m"
+    memory: "512Mi"
+
+service:
+  type: ClusterIP
+  port: 80

@@ -1,7 +1,7 @@
 # Simulates overprovisioned team that never revisited resource requests
 # Requests 2 CPU per pod but nginx uses ~5-10 millicores
 # Cost tool expected result: OVERPROVISIONED — waste > 80%
-replicaCount: 4
+replicaCount: 2
 
 image:
   repository: nginx

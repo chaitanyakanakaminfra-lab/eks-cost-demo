@@ -1,5 +1,5 @@
 # Atlantis Helm values
-# bootstrap.sh replaces ATLANTIS_ROLE_ARN with real value after terraform apply
+# bootstrap.sh replaces arn:aws:iam::535709430661:role/eks-cost-demo-atlantis with real value after terraform apply
 
 orgAllowlist: "github.com/chaitanyakanakaminfra-lab/*"
 
@@ -43,7 +43,7 @@ service:
 serviceAccount:
   create: true
   annotations:
-    eks.amazonaws.com/role-arn: "ATLANTIS_ROLE_ARN"
+    eks.amazonaws.com/role-arn: "arn:aws:iam::535709430661:role/eks-cost-demo-atlantis"
 
 resources:
   requests:

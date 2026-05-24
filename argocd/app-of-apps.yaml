@@ -1,0 +1,25 @@
+# Root ArgoCD application
+# Watches argocd/apps/ and syncs every Application it finds there
+# Add a new app: drop a yaml file in argocd/apps/ and push — done
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/chaitanyakanakaminfra-lab/eks-cost-demo
+    targetRevision: HEAD
+    path: argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -2,12 +2,8 @@ orgAllowlist: "github.com/chaitanyakanakaminfra-lab/*"
 
 github:
   user: chaitanyakanakaminfra-lab
-  token:
-    secretName: atlantis-github-secrets
-    secretKey: github-token
-  secret:
-    secretName: atlantis-github-secrets
-    secretKey: webhook-secret
+  token: ""
+  secret: ""
 
 repoConfig: |
   repos:
@@ -59,12 +55,24 @@ volumeClaim:
     requests:
       storage: 5Gi
 
-environmentSecrets:
-  - name: AWS_REGION
-    valueFrom:
-      secretKeyRef:
-        name: atlantis-aws-config
-        key: region
+environment:
+  AWS_REGION: us-east-1
 
 hidePrevPlanComments: true
 disableApplyAll: false
+extraEnvs:
+  - name: GITHUB_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: atlantis-github-secrets
+        key: github-token
+  - name: ATLANTIS_GH_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: atlantis-github-secrets
+        key: github-token
+  - name: ATLANTIS_GH_WEBHOOK_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: atlantis-github-secrets
+        key: webhook-secret

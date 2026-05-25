@@ -1,116 +1,142 @@
 """
-EKSClient — connects to EKS using boto3 + kubernetes Python client.
-Fetches nodes with instance types and pods with resource requests.
+EKSClient — works both locally (kubectl) and in Atlantis (boto3 token).
 """
-import boto3
-import base64
-import tempfile
-from kubernetes import client
-from kubernetes.client.rest import ApiException
+import subprocess
+import json
+import os
 
 
 class EKSClient:
     def __init__(self, cluster_name: str, region: str):
         self.cluster_name = cluster_name
         self.region       = region
-        self._configure_client()
-        self.v1 = client.CoreV1Api()
 
-    def _configure_client(self):
-        """Authenticate to EKS using boto3 — no kubeconfig needed."""
-        eks     = boto3.client("eks", region_name=self.region)
-        cluster = eks.describe_cluster(name=self.cluster_name)["cluster"]
-
-        ca_bytes = base64.b64decode(
-            cluster["certificateAuthority"]["data"]
+    def _kubectl(self, args: list) -> dict:
+        env = os.environ.copy()
+        # Try to generate kubeconfig if not present
+        if not os.path.exists(os.path.expanduser('~/.kube/config')):
+            self._setup_kubeconfig()
+        cmd = ["kubectl"] + args + ["-o", "json"]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=True, env=env
         )
-        ca_file  = tempfile.NamedTemporaryFile(delete=False, suffix=".crt")
-        ca_file.write(ca_bytes)
-        ca_file.close()
+        return json.loads(result.stdout)
 
-        token = self._get_token()
+    def _setup_kubeconfig(self):
+        """Generate kubeconfig using boto3 when aws cli not available."""
+        import boto3, base64, tempfile
+        from botocore.signers import RequestSigner
+        from botocore.credentials import Credentials
 
-        cfg             = client.Configuration()
-        cfg.host        = cluster["endpoint"]
-        cfg.ssl_ca_cert = ca_file.name
-        cfg.api_key     = {"authorization": f"Bearer {token}"}
-        client.Configuration.set_default(cfg)
+        session = boto3.session.Session()
+        eks = session.client('eks', region_name=self.region)
+        cluster = eks.describe_cluster(name=self.cluster_name)['cluster']
 
-    def _get_token(self) -> str:
-        """Generate short-lived EKS bearer token using STS."""
-        sts = boto3.client("sts", region_name=self.region)
-        url = sts.generate_presigned_url(
-            "get_caller_identity",
-            Params={},
-            ExpiresIn=60,
-            HttpMethod="GET",
+        # Write CA
+        ca = base64.b64decode(cluster['certificateAuthority']['data'])
+        ca_file = '/tmp/eks-ca.crt'
+        with open(ca_file, 'wb') as f:
+            f.write(ca)
+
+        # Generate token using STS presigned URL (correct EKS format)
+        service_id = 'sts'
+        signer = RequestSigner(
+            service_id,
+            self.region,
+            'sts',
+            'v4',
+            session.get_credentials(),
+            session.get_component('event_emitter')
         )
-        token = "k8s-aws-v1." + base64.urlsafe_b64encode(
-            url.encode("utf-8")
-        ).rstrip(b"=").decode("utf-8")
-        return token
+        import botocore.awsrequest
+        params = {
+            'method': 'GET',
+            'url': f'https://sts.{self.region}.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15',
+            'body': {},
+            'headers': {'x-k8s-aws-id': self.cluster_name},
+            'context': {}
+        }
+        signed = signer.generate_presigned_url(
+            params, region_name=self.region,
+            expires_in=60, operation_name=''
+        )
+        token = 'k8s-aws-v1.' + base64.urlsafe_b64encode(
+            signed.encode()
+        ).decode().rstrip('=')
 
-    def get_nodes(self) -> list[dict]:
-        """Return nodes with instance type and allocatable resources."""
+        # Write kubeconfig
+        kubeconfig = f"""apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: {ca_file}
+    server: {cluster['endpoint']}
+  name: {self.cluster_name}
+contexts:
+- context:
+    cluster: {self.cluster_name}
+    user: {self.cluster_name}
+  name: {self.cluster_name}
+current-context: {self.cluster_name}
+kind: Config
+users:
+- name: {self.cluster_name}
+  user:
+    token: {token}
+"""
+        os.makedirs(os.path.expanduser('~/.kube'), exist_ok=True)
+        with open(os.path.expanduser('~/.kube/config'), 'w') as f:
+            f.write(kubeconfig)
+
+    def get_nodes(self) -> list:
+        data = self._kubectl(["get", "nodes"])
         nodes = []
-        for n in self.v1.list_node().items:
-            labels = n.metadata.labels or {}
-            alloc  = n.status.allocatable or {}
+        for n in data.get("items", []):
+            labels = n["metadata"].get("labels", {})
+            alloc  = n["status"].get("allocatable", {})
             nodes.append({
-                "name": n.metadata.name,
+                "name": n["metadata"]["name"],
                 "instance_type": labels.get(
                     "node.kubernetes.io/instance-type", "unknown"
                 ),
-                "allocatable_cpu":    self._parse_cpu(
-                    alloc.get("cpu", "0")
-                ),
-                "allocatable_memory": self._parse_mem(
-                    alloc.get("memory", "0Ki")
-                ),
+                "allocatable_cpu":    self._parse_cpu(alloc.get("cpu", "0")),
+                "allocatable_memory": self._parse_mem(alloc.get("memory", "0Ki")),
             })
         return nodes
 
-    def get_pods(self, namespace: str = "all") -> list[dict]:
-        """Return pods with resource requests and owner deployment."""
+    def get_pods(self, namespace: str = "all") -> list:
         SKIP = {"kube-system", "kube-public", "kube-node-lease"}
+        if namespace == "all":
+            data = self._kubectl(["get", "pods", "--all-namespaces"])
+        else:
+            data = self._kubectl(["get", "pods", "-n", namespace])
         pods = []
-
-        raw = (
-            self.v1.list_pod_for_all_namespaces()
-            if namespace == "all"
-            else self.v1.list_namespaced_pod(namespace=namespace)
-        )
-
-        for pod in raw.items:
-            if pod.metadata.namespace in SKIP:
+        for pod in data.get("items", []):
+            ns = pod["metadata"].get("namespace", "default")
+            if ns in SKIP:
                 continue
             cpu_req = mem_req = 0
-            for c in pod.spec.containers:
-                if c.resources and c.resources.requests:
-                    cpu_req += self._parse_cpu(
-                        c.resources.requests.get("cpu", "0")
-                    )
-                    mem_req += self._parse_mem(
-                        c.resources.requests.get("memory", "0Ki")
-                    )
+            for c in pod["spec"].get("containers", []):
+                requests = c.get("resources", {}).get("requests", {})
+                cpu_req += self._parse_cpu(requests.get("cpu", "0"))
+                mem_req += self._parse_mem(requests.get("memory", "0Ki"))
             pods.append({
-                "name":           pod.metadata.name,
-                "namespace":      pod.metadata.namespace,
+                "name":           pod["metadata"]["name"],
+                "namespace":      ns,
                 "deployment":     self._deployment(pod),
-                "node":           pod.spec.node_name,
-                "phase":          pod.status.phase,
+                "node":           pod["spec"].get("nodeName", ""),
+                "phase":          pod["status"].get("phase", "Unknown"),
                 "cpu_request":    cpu_req,
                 "memory_request": mem_req,
             })
         return pods
 
     @staticmethod
-    def _deployment(pod) -> str:
-        for ref in (pod.metadata.owner_references or []):
-            if ref.kind == "ReplicaSet":
-                parts = ref.name.rsplit("-", 2)
-                return parts[0] if len(parts) >= 2 else ref.name
-        return pod.metadata.name
+    def _deployment(pod: dict) -> str:
+        for ref in pod["metadata"].get("ownerReferences", []):
+            if ref["kind"] == "ReplicaSet":
+                parts = ref["name"].rsplit("-", 2)
+                return parts[0] if len(parts) >= 2 else ref["name"]
+        return pod["metadata"]["name"]
 
     @staticmethod
     def _parse_cpu(s: str) -> float:

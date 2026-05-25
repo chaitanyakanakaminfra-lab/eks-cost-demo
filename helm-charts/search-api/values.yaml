@@ -1,7 +1,7 @@
 # Simulates overprovisioned team that never revisited resource requests
 # Requests 2 CPU per pod but nginx uses ~5-10 millicores
 # Cost tool expected result: OVERPROVISIONED — waste > 80%
-replicaCount: 1
+replicaCount: 4
 
 image:
   repository: nginx
@@ -10,11 +10,11 @@ image:
 
 resources:
   requests:
-    cpu: "500m"
-    memory: "512Mi"
+    cpu: "2000m"
+    memory: "4Gi"
   limits:
-    cpu: "1000m"
-    memory: "1Gi"
+    cpu: "4000m"
+    memory: "8Gi"
 
 service:
   type: ClusterIP

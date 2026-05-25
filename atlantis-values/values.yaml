@@ -55,12 +55,7 @@ volumeClaim:
     requests:
       storage: 5Gi
 
-environment:
-  AWS_REGION: us-east-1
-
-hidePrevPlanComments: true
-disableApplyAll: false
-extraEnvs:
+environmentRaw:
   - name: GITHUB_TOKEN
     valueFrom:
       secretKeyRef:

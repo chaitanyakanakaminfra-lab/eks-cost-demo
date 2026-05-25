@@ -12,7 +12,7 @@ spec:
     chart: kube-prometheus-stack
     targetRevision: 85.3.3
     helm:
-     values: |
+      values: |
         grafana:
           adminPassword: "demo-grafana-2024"
           service:
@@ -46,3 +46,13 @@ spec:
           enabled: true
         kubeStateMetrics:
           enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -39,11 +39,10 @@ resources:
 volumeClaim:
   enabled: false
 
-statefulSet:
-  securityContext:
-    runAsUser: 100
-    runAsGroup: 1000
-    fsGroup: 1000
+securityContext:
+  fsGroup: 1000
+  runAsUser: 100
+  fsGroupChangePolicy: OnRootMismatch
 
 environment:
   AWS_REGION: us-east-1

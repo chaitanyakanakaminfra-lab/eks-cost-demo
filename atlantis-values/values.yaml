@@ -37,7 +37,13 @@ resources:
     memory: 512Mi
 
 volumeClaim:
-  enabled: false
+  enabled: true
+  storageClassName: gp2
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
 
 securityContext:
   fsGroup: 1000

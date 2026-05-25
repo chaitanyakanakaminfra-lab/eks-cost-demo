@@ -8,7 +8,7 @@ import requests
 
 class AtlantisHook:
     def __init__(self):
-        self.token   = os.environ.get("GITHUB_TOKEN", "")
+        self.token   = os.environ.get("GITHUB_TOKEN", "") or os.environ.get("ATLANTIS_GH_TOKEN", "")
         self.repo    = os.environ.get("ATLANTIS_REPO_NAME", "")
         self.pr_num  = os.environ.get("ATLANTIS_PULL_NUM", "")
         self.api_url = os.environ.get(

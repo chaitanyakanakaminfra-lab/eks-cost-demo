@@ -19,16 +19,6 @@ repoConfig: |
       apply:
         steps:
           - apply
-          - run: |
-              echo "Running EKS Cost Attribution Engine..."
-              cd $BASE_REPO_DIR
-              pip install -q -r eks-cost-attribution/requirements.txt
-              python eks-cost-attribution/main.py \
-                --cluster eks-cost-demo \
-                --region   us-east-1 \
-                --format   markdown \
-                --atlantis
-              echo "Cost attribution complete."
 
 service:
   type: LoadBalancer
@@ -48,26 +38,14 @@ resources:
 
 volumeClaim:
   enabled: false
-  storageClassName: ""
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
 
-environmentRaw:
-  - name: GITHUB_TOKEN
-    valueFrom:
-      secretKeyRef:
-        name: atlantis-github-secrets
-        key: github-token
-  - name: ATLANTIS_GH_TOKEN
-    valueFrom:
-      secretKeyRef:
-        name: atlantis-github-secrets
-        key: github-token
-  - name: ATLANTIS_GH_WEBHOOK_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: atlantis-github-secrets
-        key: webhook-secret
+podSecurityContext:
+  runAsUser: 100
+  runAsGroup: 1000
+  fsGroup: 1000
+
+environment:
+  AWS_REGION: us-east-1
+
+hidePrevPlanComments: true
+disableApplyAll: false

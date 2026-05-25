@@ -1,5 +1,6 @@
 """
-EKSClient — works both locally (kubectl) and in Atlantis (boto3 token).
+EKSClient — uses kubectl with eks-token for auth.
+Works in Atlantis container and locally.
 """
 import subprocess
 import json
@@ -10,82 +11,54 @@ class EKSClient:
     def __init__(self, cluster_name: str, region: str):
         self.cluster_name = cluster_name
         self.region       = region
+        self._ensure_kubeconfig()
+
+    def _ensure_kubeconfig(self):
+        """Set up kubeconfig using eks-token if not already configured."""
+        import boto3, base64
+        from eks_token import get_token
+
+        try:
+            eks = boto3.client('eks', region_name=self.region)
+            cluster = eks.describe_cluster(name=self.cluster_name)['cluster']
+
+            ca = base64.b64decode(cluster['certificateAuthority']['data'])
+            with open('/tmp/eks-ca.crt', 'wb') as f:
+                f.write(ca)
+
+            token = get_token(cluster_name=self.cluster_name)['status']['token']
+
+            os.makedirs(os.path.expanduser('~/.kube'), exist_ok=True)
+            kubeconfig = (
+                "apiVersion: v1\n"
+                "clusters:\n"
+                "- cluster:\n"
+                "    certificate-authority: /tmp/eks-ca.crt\n"
+                f"    server: {cluster['endpoint']}\n"
+                f"  name: {self.cluster_name}\n"
+                "contexts:\n"
+                "- context:\n"
+                f"    cluster: {self.cluster_name}\n"
+                f"    user: {self.cluster_name}\n"
+                f"  name: {self.cluster_name}\n"
+                f"current-context: {self.cluster_name}\n"
+                "kind: Config\n"
+                "users:\n"
+                f"- name: {self.cluster_name}\n"
+                "  user:\n"
+                f"    token: {token}\n"
+            )
+            with open(os.path.expanduser('~/.kube/config'), 'w') as f:
+                f.write(kubeconfig)
+        except Exception as e:
+            print(f"[kubeconfig] Setup failed: {e}, using existing config")
 
     def _kubectl(self, args: list) -> dict:
-        env = os.environ.copy()
-        # Try to generate kubeconfig if not present
-        if not os.path.exists(os.path.expanduser('~/.kube/config')):
-            self._setup_kubeconfig()
         cmd = ["kubectl"] + args + ["-o", "json"]
         result = subprocess.run(
-            cmd, capture_output=True, text=True, check=True, env=env
+            cmd, capture_output=True, text=True, check=True
         )
         return json.loads(result.stdout)
-
-    def _setup_kubeconfig(self):
-        """Generate kubeconfig using boto3 when aws cli not available."""
-        import boto3, base64, tempfile
-        from botocore.signers import RequestSigner
-        from botocore.credentials import Credentials
-
-        session = boto3.session.Session()
-        eks = session.client('eks', region_name=self.region)
-        cluster = eks.describe_cluster(name=self.cluster_name)['cluster']
-
-        # Write CA
-        ca = base64.b64decode(cluster['certificateAuthority']['data'])
-        ca_file = '/tmp/eks-ca.crt'
-        with open(ca_file, 'wb') as f:
-            f.write(ca)
-
-        # Generate token using STS presigned URL (correct EKS format)
-        service_id = 'sts'
-        signer = RequestSigner(
-            service_id,
-            self.region,
-            'sts',
-            'v4',
-            session.get_credentials(),
-            session.get_component('event_emitter')
-        )
-        import botocore.awsrequest
-        params = {
-            'method': 'GET',
-            'url': f'https://sts.{self.region}.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15',
-            'body': {},
-            'headers': {'x-k8s-aws-id': self.cluster_name},
-            'context': {}
-        }
-        signed = signer.generate_presigned_url(
-            params, region_name=self.region,
-            expires_in=60, operation_name=''
-        )
-        token = 'k8s-aws-v1.' + base64.urlsafe_b64encode(
-            signed.encode()
-        ).decode().rstrip('=')
-
-        # Write kubeconfig
-        kubeconfig = f"""apiVersion: v1
-clusters:
-- cluster:
-    certificate-authority: {ca_file}
-    server: {cluster['endpoint']}
-  name: {self.cluster_name}
-contexts:
-- context:
-    cluster: {self.cluster_name}
-    user: {self.cluster_name}
-  name: {self.cluster_name}
-current-context: {self.cluster_name}
-kind: Config
-users:
-- name: {self.cluster_name}
-  user:
-    token: {token}
-"""
-        os.makedirs(os.path.expanduser('~/.kube'), exist_ok=True)
-        with open(os.path.expanduser('~/.kube/config'), 'w') as f:
-            f.write(kubeconfig)
 
     def get_nodes(self) -> list:
         data = self._kubectl(["get", "nodes"])

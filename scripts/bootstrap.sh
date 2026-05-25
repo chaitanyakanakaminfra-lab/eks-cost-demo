@@ -14,7 +14,7 @@ done
 # ── Colors ────────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; CYAN='\033[0;36m'
 YELLOW='\033[1;33m'; BOLD='\033[1m'; RESET='\033[0m'
-TOTAL=10
+TOTAL=11
 
 step() { echo -e "\n${CYAN}${BOLD}[$1/$TOTAL]${RESET} $2"; }
 ok()   { echo -e "${GREEN}  ✅ $1${RESET}"; }
@@ -27,7 +27,7 @@ LOCK_TABLE="${CLUSTER_NAME}-tflock"
 echo -e "\n${BOLD}EKS Cost Demo — Full Stack Bootstrap${RESET}"
 echo "  Cluster:  $CLUSTER_NAME  |  Region: $AWS_REGION"
 echo "  GitHub:   $GITHUB_USER/$GITHUB_REPO"
-echo "  Estimate: ~\$5-7 total for 48h"
+echo "  Estimate: ~\$7-10 total for 48h"
 echo ""
 
 # ── Step 1: S3 + DynamoDB ─────────────────────────────────────────────────────
@@ -59,7 +59,6 @@ aws dynamodb create-table \
 
 # ── Step 2: Write backend config ──────────────────────────────────────────────
 step 2 "Writing Terraform backend config..."
-
 cat > terraform/backend.tf << TFEOF
 terraform {
   backend "s3" {
@@ -79,19 +78,25 @@ cd terraform
 terraform init -upgrade
 ok "Terraform initialised"
 
-# ── Step 4: Terraform apply ───────────────────────────────────────────────────
-step 4 "Running terraform apply — VPC + EKS + IAM (15-20 min)..."
+# ── Step 4: Apply infra only (VPC + EKS + IAM — no ArgoCD yet) ───────────────
+step 4 "Applying VPC + EKS + IAM (15-20 min)..."
 warn "Slow step — grab a coffee."
 
 terraform apply -auto-approve \
   -var="aws_region=${AWS_REGION}" \
-  -var="cluster_name=${CLUSTER_NAME}"
+  -var="cluster_name=${CLUSTER_NAME}" \
+  -target=module.vpc \
+  -target=module.eks \
+  -target=aws_iam_policy.cost_attribution \
+  -target=aws_iam_policy.atlantis \
+  -target=module.cost_attribution_irsa \
+  -target=module.atlantis_irsa \
+  -target=aws_eks_addon.cloudwatch_observability
 
-ATLANTIS_ROLE_ARN=$(terraform output -raw atlantis_iam_role_arn)
-ok "Terraform apply complete"
+ok "VPC + EKS + IAM complete"
 cd ..
 
-# ── Step 5: Configure kubectl ─────────────────────────────────────────────────
+# ── Step 5: Configure kubectl BEFORE ArgoCD install ──────────────────────────
 step 5 "Configuring kubectl..."
 aws eks update-kubeconfig \
   --region "$AWS_REGION" \
@@ -99,21 +104,32 @@ aws eks update-kubeconfig \
 kubectl get nodes
 ok "kubectl configured"
 
-# ── Step 6: Patch Atlantis IAM role ARN ──────────────────────────────────────
-step 6 "Injecting Atlantis IAM role ARN..."
+# ── Step 6: Apply ArgoCD (now kubectl is ready) ───────────────────────────────
+step 6 "Installing ArgoCD via Helm..."
+cd terraform
+terraform apply -auto-approve \
+  -var="aws_region=${AWS_REGION}" \
+  -var="cluster_name=${CLUSTER_NAME}"
+
+ATLANTIS_ROLE_ARN=$(terraform output -raw atlantis_iam_role_arn)
+ok "ArgoCD installed"
+cd ..
+
+# ── Step 7: Patch Atlantis IAM role ARN ──────────────────────────────────────
+step 7 "Injecting Atlantis IAM role ARN..."
 sed -i "s|ATLANTIS_ROLE_ARN|${ATLANTIS_ROLE_ARN}|g" \
   atlantis-values/values.yaml
 ok "Role ARN patched: $ATLANTIS_ROLE_ARN"
 
-# ── Step 7: Commit updated values ────────────────────────────────────────────
-step 7 "Pushing updated atlantis values to GitHub..."
+# ── Step 8: Commit updated values ────────────────────────────────────────────
+step 8 "Pushing updated atlantis values to GitHub..."
 git add atlantis-values/values.yaml
 git commit -m "chore: inject atlantis IAM role ARN" || true
 git push
 ok "Pushed to GitHub"
 
-# ── Step 8: Create Kubernetes secrets ─────────────────────────────────────────
-step 8 "Creating Kubernetes secrets for Atlantis..."
+# ── Step 9: Create Kubernetes secrets ─────────────────────────────────────────
+step 9 "Creating Kubernetes secrets for Atlantis..."
 kubectl create namespace atlantis \
   --dry-run=client -o yaml | kubectl apply -f -
 
@@ -124,8 +140,8 @@ kubectl create secret generic atlantis-github-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 ok "Kubernetes secrets created"
 
-# ── Step 9: Deploy App of Apps ────────────────────────────────────────────────
-step 9 "Deploying ArgoCD App of Apps..."
+# ── Step 10: Deploy App of Apps ───────────────────────────────────────────────
+step 10 "Deploying ArgoCD App of Apps..."
 kubectl wait \
   --for=condition=available \
   deployment/argocd-server \
@@ -137,8 +153,8 @@ ok "App of Apps deployed — ArgoCD syncing all apps"
 echo "  Waiting 60s for apps to start..."
 sleep 60
 
-# ── Step 10: Print access details ─────────────────────────────────────────────
-step 10 "Gathering access details..."
+# ── Step 11: Print access details ─────────────────────────────────────────────
+step 11 "Gathering access details..."
 
 ARGOCD_PASS=$(kubectl -n argocd get secret \
   argocd-initial-admin-secret \

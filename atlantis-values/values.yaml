@@ -2,8 +2,8 @@ orgAllowlist: "github.com/chaitanyakanakaminfra-lab/*"
 
 github:
   user: chaitanyakanakaminfra-lab
-  token: ""
-  secret: ""
+  token: "placeholder-overridden-by-env"
+  secret: "placeholder-overridden-by-env"
 
 repoConfig: |
   repos:

@@ -1,14 +1,11 @@
-# Atlantis Helm values
-# bootstrap.sh replaces arn:aws:iam::535709430661:role/eks-cost-demo-atlantis with real value after terraform apply
-
 orgAllowlist: "github.com/chaitanyakanakaminfra-lab/*"
 
 github:
   user: chaitanyakanakaminfra-lab
-  tokenSecret:
+  token:
     secretName: atlantis-github-secrets
     secretKey: github-token
-  secretSecret:
+  secret:
     secretName: atlantis-github-secrets
     secretKey: webhook-secret
 
@@ -53,15 +50,21 @@ resources:
     cpu: 500m
     memory: 512Mi
 
-storage:
+volumeClaim:
   enabled: true
-  size: 5Gi
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
 
-environment:
+environmentSecrets:
   - name: AWS_REGION
-    value: "us-east-1"
-  - name: AWS_DEFAULT_REGION
-    value: "us-east-1"
+    valueFrom:
+      secretKeyRef:
+        name: atlantis-aws-config
+        key: region
 
 hidePrevPlanComments: true
 disableApplyAll: false
